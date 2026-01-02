@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
+const port = process.env.PORT || 4000
 app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
@@ -98,4 +99,4 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(3001, () => console.log("Server Room Management on port 3001"));
+server.listen(port, () => console.log("Server Room Management on port 3001"));
