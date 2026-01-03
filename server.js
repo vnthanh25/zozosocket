@@ -57,76 +57,10 @@ io.on('connection', (socket) => {
         room.gameInterval = setInterval(() => {
             turn++;
             if (turn <= maxTurns) {
-                // 1. Tạo lưới dựa trên gridSize từ client
-                // Cách tiếp cận "Xáo trộn bộ bài" thay vì bốc ngẫu nhiên từng con
-                // const animals = Array.from({ length: gridSize }, (_, i) => {
-                //     // Lấy con vật theo thứ tự i % 12 để đảm bảo các con vật xuất hiện đều nhau
-                //     const baseAnimal = ZODIAC_DATA[i % 12];
-                //     return {
-                //         ...baseAnimal,
-                //         instanceId: Math.random().toString(36).substr(2, 9)
-                //     };
-                // }).sort(() => 0.5 - Math.random()); // Sau đó mới xáo trộn vị trí
-
-                // // 1. Chọn ra 4-5 con vật "may mắn" từ 12 con
-                // const luckyAnimals = [...ZODIAC_DATA]
-                //     .sort(() => 0.5 - Math.random())
-                //     .slice(0, poolSize); // Chỉ lấy một số loại con vật thôi
-
-                // // 2. Tạo lưới chỉ từ những loại con vật này
-                // const animals = Array.from({ length: gridSize }, () => {
-                //     const randomLucky = luckyAnimals[Math.floor(Math.random() * luckyAnimals.length)];
-                //     return {
-                //         ...randomLucky,
-                //         instanceId: Math.random().toString(36).substr(2, 9)
-                //     };
-                // });
-
-                // // 1. Trộn toàn bộ 12 con giáp (như xáo bài)
-                // const shuffledZodiac = [...ZODIAC_DATA].sort(() => 0.5 - Math.random());
-
-                // let selectedAnimals = [];
-
-                // if (gridSize <= 12) {
-                //     // Nếu lưới nhỏ: Lấy X con khác nhau hoàn toàn từ danh sách đã trộn
-                //     selectedAnimals = shuffledZodiac.slice(0, gridSize);
-                // } else {
-                //     // Nếu lưới lớn (ví dụ 18): 
-                //     // - Lấy hết 12 con khác nhau trước
-                //     // - 6 con còn lại bốc ngẫu nhiên (chấp nhận trùng)
-                //     const extraCount = gridSize - 12;
-                //     const extras = Array.from({ length: extraCount }, () =>
-                //         ZODIAC_DATA[Math.floor(Math.random() * 12)]
-                //     );
-                //     selectedAnimals = [...ZODIAC_DATA, ...extras];
-                // }
-
-                // // 2. Gán instanceId và xáo trộn vị trí cuối cùng để các con trùng không đứng cạnh nhau
-                // const animals = selectedAnimals.map(a => ({
-                //     ...a,
-                //     instanceId: Math.random().toString(36).substr(2, 9)
-                // })).sort(() => 0.5 - Math.random());
-
-                // // 1. Bốc ngẫu nhiên X loài từ 12 con giáp (X = poolSize)
-                // const selectedSpecies = [...ZODIAC_DATA]
-                //     .sort(() => 0.5 - Math.random())
-                //     .slice(0, Math.min(poolSize, 12));
-
-                // // 2. Tạo lưới gridSize từ nhóm loài đã chọn ở trên
-                // const animals = Array.from({ length: gridSize }, () => {
-                //     const randomSpecies = selectedSpecies[Math.floor(Math.random() * selectedSpecies.length)];
-                //     return {
-                //         ...randomSpecies,
-                //         instanceId: Math.random().toString(36).substr(2, 9)
-                //     };
-                // }).sort(() => 0.5 - Math.random());
-
-
                 // 1. Chọn ra danh sách các loài sẽ tham gia ván này
                 const selectedSpecies = [...ZODIAC_DATA]
                     .sort(() => 0.5 - Math.random())
                     .slice(0, Math.min(poolSize, 12));
-
                 // 2. Tạo lưới bằng cách lặp lại các loài trong selectedSpecies cho đến khi đủ gridSize
                 let animalsRaw = [];
                 for (let i = 0; i < gridSize; i++) {
@@ -137,13 +71,10 @@ io.on('connection', (socket) => {
                         instanceId: Math.random().toString(36).substr(2, 9)
                     });
                 }
-
                 // 3. Xáo trộn toàn bộ lưới để vị trí các con trùng nhau không nằm cạnh nhau một cách máy móc
                 const animals = animalsRaw.sort(() => 0.5 - Math.random());
                 
-
-
-                // 2. Chọn mục tiêu dựa trên targetCount từ client
+                // 4. Chọn mục tiêu dựa trên targetCount từ client
                 // Lấy danh sách icon duy nhất hiện có trên lưới
                 const uniqueOnGrid = Array.from(new Set(animals.map(a => a.id)))
                     .map(id => animals.find(a => a.id === id));
