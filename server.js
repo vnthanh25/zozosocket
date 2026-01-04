@@ -20,6 +20,53 @@ const ZODIAC_DATA = [
 
 let rooms = {};
 
+// Hàm tạo dữ liệu lượt chơi (Helper)
+const createTurnData = (config) => {
+    const maxTurns = parseInt(config.maxTurns) || 5;
+    const timePerTurn = (parseFloat(config.timePerTurn) || 5) * 1000;
+    const targetCount = parseInt(config.targetCount) || 1; // Lấy từ Client
+    const poolSize = parseInt(config.poolSize) || 12; // Lấy từ Client
+    const gridSize = parseInt(config.gridSize) || 12;      // Lấy từ Client
+
+    if (poolSize > 12) poolSize = 12;
+    if (targetCount * 2 > poolSize) targetCount = poolSize / 2;
+    if (gridSize < targetCount * 2) gridSize = targetCount * 2
+
+    // 1. Chọn ra danh sách các loài sẽ tham gia ván này
+    const selectedSpecies = [...ZODIAC_DATA]
+        .sort(() => 0.5 - Math.random())
+        .slice(0, Math.min(poolSize, 12));
+    // 2. Tạo lưới bằng cách lặp lại các loài trong selectedSpecies cho đến khi đủ gridSize
+    let animalsRaw = [];
+    for (let i = 0; i < gridSize; i++) {
+        // Lấy con vật theo cơ chế xoay vòng (Round-robin)
+        const baseAnimal = selectedSpecies[i % selectedSpecies.length];
+        animalsRaw.push({
+            ...baseAnimal,
+            instanceId: Math.random().toString(36).substr(2, 9)
+        });
+    }
+    // 3. Xáo trộn toàn bộ lưới để vị trí các con trùng nhau không nằm cạnh nhau một cách máy móc
+    const animals = animalsRaw.sort(() => 0.5 - Math.random());
+
+    // 4. Chọn mục tiêu dựa trên targetCount từ client
+    // Lấy danh sách icon duy nhất hiện có trên lưới
+    const uniqueOnGrid = Array.from(new Set(animals.map(a => a.id)))
+        .map(id => animals.find(a => a.id === id));
+
+    // Xáo trộn và lấy đúng số lượng mục tiêu yêu cầu
+    const target = uniqueOnGrid
+        .sort(() => 0.5 - Math.random())
+        .slice(0, Math.min(targetCount, uniqueOnGrid.length));
+
+    return {
+        animals,
+        target,
+        timePerTurn: timePerTurn,
+        maxTurns
+    };
+};
+
 io.on('connection', (socket) => {
     socket.on('join_room', (data) => {
         if (!data || !data.roomID || !data.username) return;
@@ -37,81 +84,98 @@ io.on('connection', (socket) => {
         const room = rooms[roomID];
         if (!room) return;
 
-        let turn = 0;
-        const maxTurns = parseInt(config.maxTurns) || 5;
-        const timeMs = (parseFloat(config.timePerTurn) || 5) * 1000;
-        const targetCount = parseInt(config.targetCount) || 1; // Lấy từ Client
-        const poolSize = parseInt(config.poolSize) || 12; // Lấy từ Client
-        const gridSize = parseInt(config.gridSize) || 12;      // Lấy từ Client
+        room.config = config; // Lưu cấu hình (bao gồm turnMode: 'personal' hoặc 'room')
+        const maxGameTime = parseInt(config.maxGameTime) || 60;
 
-        if (poolSize > 12) poolSize = 12;
-        if (targetCount * 2 > poolSize) targetCount = poolSize / 2;
-        if (gridSize < targetCount * 2) gridSize = targetCount * 2
-
-        // Reset điểm cho mọi người trong phòng
         Object.keys(room.players).forEach(id => room.players[id].score = 0);
         io.to(roomID).emit('update_players', Object.values(room.players));
 
-        if (room.gameInterval) clearInterval(room.gameInterval);
-
-        room.gameInterval = setInterval(() => {
-            turn++;
-            if (turn <= maxTurns) {
-                // 1. Chọn ra danh sách các loài sẽ tham gia ván này
-                const selectedSpecies = [...ZODIAC_DATA]
-                    .sort(() => 0.5 - Math.random())
-                    .slice(0, Math.min(poolSize, 12));
-                // 2. Tạo lưới bằng cách lặp lại các loài trong selectedSpecies cho đến khi đủ gridSize
-                let animalsRaw = [];
-                for (let i = 0; i < gridSize; i++) {
-                    // Lấy con vật theo cơ chế xoay vòng (Round-robin)
-                    const baseAnimal = selectedSpecies[i % selectedSpecies.length];
-                    animalsRaw.push({
-                        ...baseAnimal,
-                        instanceId: Math.random().toString(36).substr(2, 9)
-                    });
-                }
-                // 3. Xáo trộn toàn bộ lưới để vị trí các con trùng nhau không nằm cạnh nhau một cách máy móc
-                const animals = animalsRaw.sort(() => 0.5 - Math.random());
-                
-                // 4. Chọn mục tiêu dựa trên targetCount từ client
-                // Lấy danh sách icon duy nhất hiện có trên lưới
-                const uniqueOnGrid = Array.from(new Set(animals.map(a => a.id)))
-                    .map(id => animals.find(a => a.id === id));
-
-                // Xáo trộn và lấy đúng số lượng mục tiêu yêu cầu
-                const target = uniqueOnGrid
-                    .sort(() => 0.5 - Math.random())
-                    .slice(0, Math.min(targetCount, uniqueOnGrid.length));
-
-                io.to(roomID).emit('new_turn', {
-                    animals,
-                    target,
-                    turnCount: turn,
-                    timePerTurn: timeMs,
-                    maxTurns
-                });
-            } else {
-                clearInterval(room.gameInterval);
-                io.to(roomID).emit('game_over', Object.values(room.players));
-            }
-        }, timeMs);
-    });
-
-    socket.on('submit_win', (payload) => {
-        // payload là dữ liệu gửi từ client lên. Ta kiểm tra xem nó có tồn tại ko.
-        if (!payload || !payload.roomID) {
-            console.log("Cảnh báo: Có người thắng nhưng thiếu roomID");
-            return;
+        // Phát lượt đầu tiên cho mọi người
+        if (config.turnMode === 'personal') {
+            Object.keys(room.players).forEach(playerId => {
+                const turnData = createTurnData(config);
+                io.to(playerId).emit('personal_new_turn', turnData);
+            });
+        } else {
+            // Chế độ Room: Phát chung một lượt cho cả phòng
+            const commonTurn = createTurnData(config);
+            io.to(roomID).emit('new_turn', commonTurn);
         }
 
-        const targetRoomID = payload.roomID;
-        const room = rooms[targetRoomID];
+        // Quản lý tổng thời gian ván đấu
+        if (room.gameTimeout) clearTimeout(room.gameTimeout);
+        room.gameTimeout = setTimeout(() => {
+            if (rooms[roomID]) {
+                io.to(roomID).emit('game_over', Object.values(rooms[roomID].players));
+            }
+        }, maxGameTime * 1000);
+    });
 
-        if (room && room.players[socket.id]) {
-            room.players[socket.id].score++;
-            // Gửi cập nhật điểm cho tất cả mọi người TRONG PHÒNG ĐÓ
-            io.to(targetRoomID).emit('update_players', Object.values(room.players));
+    // // --- SỰ KIỆN MỚI 1: Yêu cầu lượt mới cá nhân ---
+    // socket.on('request_next_turn_personal', ({ roomID }) => {
+    //     const room = rooms[roomID];
+    //     if (room) {
+    //         // Cộng điểm cho người vừa yêu cầu (vì họ đã hoàn thành lượt trước)
+    //         if (room.players[socket.id]) {
+    //             room.players[socket.id].score++;
+
+    //             // Cập nhật bảng điểm cho cả phòng thấy sự thay đổi
+    //             io.to(roomID).emit('update_players', Object.values(room.players));
+
+    //             // --- SỰ KIỆN MỚI 2: Gửi lượt mới CHỈ cho người yêu cầu ---
+    //             const nextTurn = createTurnData(room.config);
+    //             socket.emit('personal_new_turn', nextTurn);
+    //         }
+    //     }
+    // });
+
+    // Thêm sự kiện này vào bên trong io.on('connection', ...)
+    socket.on('request_next_turn_timeout', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (room && room.gameState !== 'ENDED') {
+            // Tạo dữ liệu lượt mới dựa trên cấu hình phòng
+            const nextTurn = createTurnData(room.config);
+
+            // Chỉ gửi cho đúng người vừa hết thời gian
+            // Nếu ở chế độ 'room', có thể cân nhắc gửi cho cả phòng tùy bạn
+            if (room.config.turnMode === 'personal') {
+                socket.emit('personal_new_turn', nextTurn);
+            } else {
+                // Ở chế độ room, nếu 1 người hết giờ có thể cho cả phòng qua lượt luôn
+                io.to(roomID).emit('new_turn', nextTurn);
+            }
+        }
+    });
+
+    // Sự kiện quan trọng: Hoàn thành lượt cá nhân
+    socket.on('submit_win', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (!room || room.gameState === 'ENDED') return;
+
+        const player = room.players[socket.id];
+        if (player) {
+            player.score++;
+            io.to(roomID).emit('update_players', Object.values(room.players));
+
+            // KIỂM TRA CHẾ ĐỘ CHƠI
+            if (room.config.turnMode === 'personal') {
+                // Chế độ cá nhân: Chỉ gửi cho người thắng
+                const nextTurn = createTurnData(room.config);
+                socket.emit('personal_new_turn', nextTurn);
+            } else {
+                // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
+                const nextCommonTurn = createTurnData(room.config);
+                io.to(roomID).emit('new_turn', nextCommonTurn);
+            }
+        }
+    });
+
+    // Sự kiện cưỡng bức kết thúc ván (nếu Client đếm ngược tổng thời gian xong trước)
+    socket.on('force_end_game', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (room) {
+            if (room.gameTimeout) clearTimeout(room.gameTimeout);
+            io.to(roomID).emit('game_over', Object.values(room.players));
         }
     });
 
