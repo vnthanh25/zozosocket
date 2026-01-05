@@ -23,6 +23,7 @@ let rooms = {};
 // Hàm tạo dữ liệu lượt chơi (Helper)
 const createTurnData = (config) => {
     const maxTurns = parseInt(config.maxTurns) || 5;
+    const maxGameTime = parseInt(config.maxGameTime) || 60;
     const timePerTurn = (parseFloat(config.timePerTurn) || 5) * 1000;
     const targetCount = parseInt(config.targetCount) || 1; // Lấy từ Client
     const poolSize = parseInt(config.poolSize) || 12; // Lấy từ Client
@@ -62,8 +63,9 @@ const createTurnData = (config) => {
     return {
         animals,
         target,
+        maxTurns,
+        maxGameTime,
         timePerTurn: timePerTurn,
-        maxTurns
     };
 };
 
@@ -80,54 +82,89 @@ io.on('connection', (socket) => {
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
 
-    socket.on('start_game', ({ roomID, config }) => {
+    // Hàm hỗ trợ gửi lượt mới và kiểm tra maxTurns
+    const sendNewTurn = (roomID, config) => {
         const room = rooms[roomID];
         if (!room) return;
 
-        room.config = config; // Lưu cấu hình (bao gồm turnMode: 'personal' hoặc 'room')
-        const maxGameTime = parseInt(config.maxGameTime) || 60;
+        room.currentTurn++;
+        const maxTurns = parseInt(room.config.maxTurns) || 5;
 
-        Object.keys(room.players).forEach(id => room.players[id].score = 0);
+        // KIỂM TRA ĐIỀU KIỆN HẾT LƯỢT (maxTurns)
+        if (room.currentTurn > maxTurns) {
+            handleGameOver(roomID);
+            return;
+        }
+
+        // Reset điểm và số lượt cho từng người
+        Object.keys(room.players).forEach(id => {
+            room.players[id].score = 0;
+            if (room.currentTurn === 1) room.players[id].turnsCompleted = 0;
+        });
+
         io.to(roomID).emit('update_players', Object.values(room.players));
 
         // Phát lượt đầu tiên cho mọi người
         if (config.turnMode === 'personal') {
             Object.keys(room.players).forEach(playerId => {
                 const turnData = createTurnData(config);
-                io.to(playerId).emit('personal_new_turn', turnData);
+                io.to(playerId).emit('personal_new_turn', {
+                    ...turnData,
+                    currentTurn: room.currentTurn
+                });
             });
         } else {
             // Chế độ Room: Phát chung một lượt cho cả phòng
             const commonTurn = createTurnData(config);
-            io.to(roomID).emit('new_turn', commonTurn);
+            io.to(roomID).emit('new_turn', {
+                ...commonTurn,
+                currentTurn: room.currentTurn
+            });
+        }
+    };
+
+    const handleGameOver = (roomID) => {
+        const room = rooms[roomID];
+        if (room) {
+            if (room.timer) clearInterval(room.timer);
+            if (room.gameTimeout) clearTimeout(room.gameTimeout);
+            io.to(roomID).emit('game_over', Object.values(room.players));
+            room.gameState = 'ENDED';
+        }
+    };
+
+    socket.on('start_game', ({ roomID, config }) => {
+        const room = rooms[roomID];
+        if (!room) return;
+
+        // Lưu trạng thái vào room object
+        room.gameState = 'PLAYING';
+        room.config = config; // Lưu cấu hình (bao gồm turnMode: 'personal' hoặc 'room')
+        room.currentTurn = 0; // Khởi tạo biến đếm lượt
+        sendNewTurn(roomID, config);
+
+        const maxGameTime = parseInt(config.maxGameTime) || 60;
+        let timeout = maxGameTime;
+
+        let timer = null;
+        if (config.turnMode === 'room') {
+            const maxTurns = parseInt(config.maxTurns) || 5;
+            const timePerTurn = (parseFloat(config.timePerTurn) || 5);
+            if (timeout > maxTurns * timePerTurn) {
+                timeout = maxTurns * timePerTurn;
+            }
+            timer = setInterval(() => {
+                room.currentTurn++;
+            }, timePerTurn * 1000);
+            room.timer = timer;
         }
 
-        // Quản lý tổng thời gian ván đấu
+        // 1. Quản lý TỔNG THỜI GIAN (maxGameTime)
         if (room.gameTimeout) clearTimeout(room.gameTimeout);
         room.gameTimeout = setTimeout(() => {
-            if (rooms[roomID]) {
-                io.to(roomID).emit('game_over', Object.values(rooms[roomID].players));
-            }
+            handleGameOver(roomID);
         }, maxGameTime * 1000);
     });
-
-    // // --- SỰ KIỆN MỚI 1: Yêu cầu lượt mới cá nhân ---
-    // socket.on('request_next_turn_personal', ({ roomID }) => {
-    //     const room = rooms[roomID];
-    //     if (room) {
-    //         // Cộng điểm cho người vừa yêu cầu (vì họ đã hoàn thành lượt trước)
-    //         if (room.players[socket.id]) {
-    //             room.players[socket.id].score++;
-
-    //             // Cập nhật bảng điểm cho cả phòng thấy sự thay đổi
-    //             io.to(roomID).emit('update_players', Object.values(room.players));
-
-    //             // --- SỰ KIỆN MỚI 2: Gửi lượt mới CHỈ cho người yêu cầu ---
-    //             const nextTurn = createTurnData(room.config);
-    //             socket.emit('personal_new_turn', nextTurn);
-    //         }
-    //     }
-    // });
 
     // Thêm sự kiện này vào bên trong io.on('connection', ...)
     socket.on('request_next_turn_timeout', ({ roomID }) => {
@@ -136,13 +173,34 @@ io.on('connection', (socket) => {
             // Tạo dữ liệu lượt mới dựa trên cấu hình phòng
             const nextTurn = createTurnData(room.config);
 
+            const maxTurns = parseInt(room.config.maxTurns);
             // Chỉ gửi cho đúng người vừa hết thời gian
             // Nếu ở chế độ 'room', có thể cân nhắc gửi cho cả phòng tùy bạn
             if (room.config.turnMode === 'personal') {
-                socket.emit('personal_new_turn', nextTurn);
+                const player = room?.players[socket.id];
+                if (player && room.gameState === 'PLAYING') {
+                    player.turnsCompleted++; // Vẫn tính là đã qua 1 lượt
+
+                    if (player.turnsCompleted >= maxTurns) {
+                        socket.emit('personal_game_finished');
+                    } else {
+                        const nextTurn = createTurnData(room.config);
+                        socket.emit('personal_new_turn', {
+                            ...nextTurn,
+                            currentTurn: player.turnsCompleted + 1,
+                        });
+                    }
+                }
             } else {
-                // Ở chế độ room, nếu 1 người hết giờ có thể cho cả phòng qua lượt luôn
-                io.to(roomID).emit('new_turn', nextTurn);
+                if (room.currentTurn > maxTurns) {
+                    handleGameOver(roomID);
+                } else {
+                    // Ở chế độ room, nếu 1 người hết giờ có thể cho cả phòng qua lượt luôn
+                    io.to(roomID).emit('new_turn', {
+                        ...nextTurn,
+                        currentTurn: room.currentTurn,
+                    });
+                }
             }
         }
     });
@@ -155,18 +213,43 @@ io.on('connection', (socket) => {
         const player = room.players[socket.id];
         if (player) {
             player.score++;
-            io.to(roomID).emit('update_players', Object.values(room.players));
 
+            const maxTurns = parseInt(room.config.maxTurns);
             // KIỂM TRA CHẾ ĐỘ CHƠI
             if (room.config.turnMode === 'personal') {
-                // Chế độ cá nhân: Chỉ gửi cho người thắng
-                const nextTurn = createTurnData(room.config);
-                socket.emit('personal_new_turn', nextTurn);
+                player.turnsCompleted++; // Tăng số lượt của riêng người này
+
+                if (player.turnsCompleted >= maxTurns) {
+                    // Người này đã xong phần của mình
+                    socket.emit('personal_game_finished', { score: player.score });
+
+                    // Kiểm tra xem tất cả mọi người đã xong hết chưa?
+                    const allFinished = Object.values(room.players).every(p => p.turnsCompleted >= maxTurns);
+                    if (allFinished) {
+                        handleGameOver(roomID);
+                    }
+                } else {
+                    // Gửi lượt tiếp theo cho riêng người này
+                    const nextTurn = createTurnData(room.config);
+                    socket.emit('personal_new_turn', {
+                        ...nextTurn,
+                        currentTurn: player.turnsCompleted + 1,
+                    });
+                }
             } else {
-                // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
-                const nextCommonTurn = createTurnData(room.config);
-                io.to(roomID).emit('new_turn', nextCommonTurn);
+                if (room.currentTurn > maxTurns) {
+                    handleGameOver(roomID);
+                } else {
+                    // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
+                    const nextCommonTurn = createTurnData(room.config);
+                    io.to(roomID).emit('new_turn', {
+                        ...nextCommonTurn,
+                        currentTurn: room.currentTurn,
+                    });
+                }
             }
+
+            io.to(roomID).emit('update_players', Object.values(room.players));
         }
     });
 
