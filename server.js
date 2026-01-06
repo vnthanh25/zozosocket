@@ -137,6 +137,9 @@ io.on('connection', (socket) => {
         const room = rooms[roomID];
         if (!room) return;
 
+        room.config = { ...room.config, ...config };
+        io.to(roomID).emit('update_config', room.config);
+
         // Lưu trạng thái vào room object
         room.gameState = 'PLAYING';
         room.config = config; // Lưu cấu hình (bao gồm turnMode: 'personal' hoặc 'room')
@@ -155,6 +158,12 @@ io.on('connection', (socket) => {
             }
             timer = setInterval(() => {
                 room.currentTurn++;
+                // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
+                const nextCommonTurn = createTurnData(room.config);
+                io.to(roomID).emit('new_turn', {
+                    ...nextCommonTurn,
+                    currentTurn: room.currentTurn,
+                });
             }, timePerTurn * 1000);
             room.timer = timer;
         }
@@ -240,12 +249,12 @@ io.on('connection', (socket) => {
                 if (room.currentTurn > maxTurns) {
                     handleGameOver(roomID);
                 } else {
-                    // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
-                    const nextCommonTurn = createTurnData(room.config);
-                    io.to(roomID).emit('new_turn', {
-                        ...nextCommonTurn,
-                        currentTurn: room.currentTurn,
-                    });
+                    // // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
+                    // const nextCommonTurn = createTurnData(room.config);
+                    // io.to(roomID).emit('new_turn', {
+                    //     ...nextCommonTurn,
+                    //     currentTurn: room.currentTurn,
+                    // });
                 }
             }
 
