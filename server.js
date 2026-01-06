@@ -25,13 +25,13 @@ const createTurnData = (config) => {
     const maxTurns = parseInt(config.maxTurns) || 5;
     const maxGameTime = parseInt(config.maxGameTime) || 60;
     const timePerTurn = (parseFloat(config.timePerTurn) || 5) * 1000;
-    const targetCount = parseInt(config.targetCount) || 1; // Lấy từ Client
-    const poolSize = parseInt(config.poolSize) || 12; // Lấy từ Client
-    const gridSize = parseInt(config.gridSize) || 12;      // Lấy từ Client
+    let targetCount = parseInt(config.targetCount) || 1; // Lấy từ Client
+    let poolSize = parseInt(config.poolSize) || 12; // Lấy từ Client
+    let gridSize = parseInt(config.gridSize) || 12;      // Lấy từ Client
 
     if (poolSize > 12) poolSize = 12;
-    if (targetCount * 2 > poolSize) targetCount = poolSize / 2;
-    if (gridSize < targetCount * 2) gridSize = targetCount * 2
+    if (targetCount * 2 > poolSize) targetCount = Math.floor(poolSize / 2);
+    if (gridSize < targetCount * 2) gridSize = targetCount * 2;
 
     // 1. Chọn ra danh sách các loài sẽ tham gia ván này
     const selectedSpecies = [...ZODIAC_DATA]
@@ -83,7 +83,7 @@ io.on('connection', (socket) => {
     });
 
     // Hàm hỗ trợ gửi lượt mới và kiểm tra maxTurns
-    const sendNewTurn = (roomID, config) => {
+    const sendNewTurn = (roomID) => {
         const room = rooms[roomID];
         if (!room) return;
 
@@ -105,9 +105,9 @@ io.on('connection', (socket) => {
         io.to(roomID).emit('update_players', Object.values(room.players));
 
         // Phát lượt đầu tiên cho mọi người
-        if (config.turnMode === 'personal') {
+        if (room.config.turnMode === 'personal') {
             Object.keys(room.players).forEach(playerId => {
-                const turnData = createTurnData(config);
+                const turnData = createTurnData(room.config);
                 io.to(playerId).emit('personal_new_turn', {
                     ...turnData,
                     currentTurn: room.currentTurn
@@ -115,7 +115,7 @@ io.on('connection', (socket) => {
             });
         } else {
             // Chế độ Room: Phát chung một lượt cho cả phòng
-            const commonTurn = createTurnData(config);
+            const commonTurn = createTurnData(room.config);
             io.to(roomID).emit('new_turn', {
                 ...commonTurn,
                 currentTurn: room.currentTurn
@@ -137,33 +137,66 @@ io.on('connection', (socket) => {
         const room = rooms[roomID];
         if (!room) return;
 
-        room.config = { ...room.config, ...config };
+        // 1. Ép kiểu và giá trị mặc định an toàn
+        const maxTurns = parseInt(config.maxTurns) || 5;
+        const maxGameTime = parseInt(config.maxGameTime) || 60;
+        const timePerTurn = parseFloat(config.timePerTurn) || 5;
+
+        // Sử dụng Nullish Coalescing để tránh việc false bị biến thành true
+        const useVoice = config.useVoice ?? true;
+
+        let targetCount = parseInt(config.targetCount) || 1;
+        let poolSize = parseInt(config.poolSize) || 12;
+        let gridSize = parseInt(config.gridSize) || 12;
+
+        // 2. Ràng buộc logic (Constraint)
+        if (poolSize > 12) poolSize = 12;
+        // Đảm bảo targetCount không bao giờ vượt quá số lượng loài có sẵn
+        if (targetCount * 2 > poolSize) targetCount = Math.floor(poolSize / 2);
+        // Ngăn gridSize quá nhỏ hoặc quá lớn gây lag
+        if (gridSize < targetCount * 2) gridSize = targetCount * 2;
+        if (gridSize > 24) gridSize = 24;
+
+        // Khởi tạo biến đếm lượt
+        room.currentTurn = 0;
+
+        // 3. Cập nhật và Đồng bộ
+        const newConfig = {
+            ...room.config, // Giữ lại các config khác nếu có
+            maxTurns,
+            maxGameTime,
+            timePerTurn,
+            targetCount,
+            poolSize,
+            gridSize,
+            turnMode: config.turnMode || 'personal',
+            useVoice
+        };
+
+        room.config = newConfig; // Lưu cấu hình (bao gồm turnMode: 'personal' hoặc 'room')
+
+        // Gửi cho tất cả mọi người trong phòng
         io.to(roomID).emit('update_config', room.config);
 
         // Lưu trạng thái vào room object
         room.gameState = 'PLAYING';
-        room.config = config; // Lưu cấu hình (bao gồm turnMode: 'personal' hoặc 'room')
-        room.currentTurn = 0; // Khởi tạo biến đếm lượt
-        sendNewTurn(roomID, config);
 
-        const maxGameTime = parseInt(config.maxGameTime) || 60;
-        let timeout = maxGameTime;
+        sendNewTurn(roomID);
 
         let timer = null;
-        if (config.turnMode === 'room') {
-            const maxTurns = parseInt(config.maxTurns) || 5;
-            const timePerTurn = (parseFloat(config.timePerTurn) || 5);
-            if (timeout > maxTurns * timePerTurn) {
-                timeout = maxTurns * timePerTurn;
-            }
+        if (newConfig.turnMode === 'room') {
             timer = setInterval(() => {
                 room.currentTurn++;
-                // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
-                const nextCommonTurn = createTurnData(room.config);
-                io.to(roomID).emit('new_turn', {
-                    ...nextCommonTurn,
-                    currentTurn: room.currentTurn,
-                });
+                if (room.currentTurn > maxTurns) {
+                    handleGameOver(roomID);
+                } else {
+                    // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
+                    const nextCommonTurn = createTurnData(room.config);
+                    io.to(roomID).emit('new_turn', {
+                        ...nextCommonTurn,
+                        currentTurn: room.currentTurn,
+                    });
+                }
             }, timePerTurn * 1000);
             room.timer = timer;
         }
@@ -204,11 +237,11 @@ io.on('connection', (socket) => {
                 if (room.currentTurn > maxTurns) {
                     handleGameOver(roomID);
                 } else {
-                    // Ở chế độ room, nếu 1 người hết giờ có thể cho cả phòng qua lượt luôn
-                    io.to(roomID).emit('new_turn', {
-                        ...nextTurn,
-                        currentTurn: room.currentTurn,
-                    });
+                    // // Ở chế độ room, nếu 1 người hết giờ có thể cho cả phòng qua lượt luôn
+                    // io.to(roomID).emit('new_turn', {
+                    //     ...nextTurn,
+                    //     currentTurn: room.currentTurn,
+                    // });
                 }
             }
         }
@@ -248,13 +281,6 @@ io.on('connection', (socket) => {
             } else {
                 if (room.currentTurn > maxTurns) {
                     handleGameOver(roomID);
-                } else {
-                    // // Chế độ phòng: Đổi lượt cho TẤT CẢ mọi người
-                    // const nextCommonTurn = createTurnData(room.config);
-                    // io.to(roomID).emit('new_turn', {
-                    //     ...nextCommonTurn,
-                    //     currentTurn: room.currentTurn,
-                    // });
                 }
             }
 
