@@ -110,7 +110,7 @@ io.on('connection', (socket) => {
                 const turnData = createTurnData(room.config);
                 io.to(playerId).emit('personal_new_turn', {
                     ...turnData,
-                    currentTurn: room.currentTurn
+                    currentTurn: room.currentTurn,
                 });
             });
         } else {
@@ -118,7 +118,7 @@ io.on('connection', (socket) => {
             const commonTurn = createTurnData(room.config);
             io.to(roomID).emit('new_turn', {
                 ...commonTurn,
-                currentTurn: room.currentTurn
+                currentTurn: room.currentTurn,
             });
         }
     };
@@ -254,7 +254,8 @@ io.on('connection', (socket) => {
 
         const player = room.players[socket.id];
         if (player) {
-            player.score++;
+            const targets = Array.isArray(room.target) ? room.target : [room.target];
+            player.score += targets.length;
 
             const maxTurns = parseInt(room.config.maxTurns);
             // KIỂM TRA CHẾ ĐỘ CHƠI
@@ -285,6 +286,88 @@ io.on('connection', (socket) => {
             }
 
             io.to(roomID).emit('update_players', Object.values(room.players));
+        }
+    });
+
+    socket.on('submit_wrong222', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (room && room.players && room.players[socket.id]) {
+            // 1. Tính toán điểm mới
+            const currentScore = room.players[socket.id].score || 0;
+            const newScore = currentScore - 1;
+
+            // 2. Cập nhật vào room (Mutation)
+            room.players[socket.id].score = newScore;
+
+            // 3. QUAN TRỌNG: Tạo một bản sao hoàn toàn mới của Object players để gửi đi
+            // Điều này đảm bảo React ở Client nhận thấy sự thay đổi địa chỉ vùng nhớ
+            const playersSnapshot = JSON.parse(JSON.stringify(room.players));
+
+            console.log(`Player ${socket.id} sai, điểm mới: ${newScore}`);
+            io.to(roomID).emit('update_scores', Object.values(playersSnapshot));
+        }
+    });
+
+    socket.on('submit_wrong', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (room && room.players[socket.id]) {
+            // Trừ 10 điểm, tối thiểu là 0
+            // room.players[socket.id].score = Math.max(0, (room.players[socket.id].score || 0) - 1);
+
+            const currentPlayer = room.players[socket.id];
+            currentPlayer.score = currentPlayer.score - 1;
+
+            // // Cập nhật lại cho cả phòng thấy bảng điểm mới
+            // io.to(roomID).emit('update_scores', Object.values(room.players));
+            // socket.emit('update_score', { score: currentPlayer.score });
+
+            io.to(roomID).emit('update_players', Object.values(room.players));
+        }
+    });
+
+    // Server side
+    socket.on('select_animal', ({ roomID, instanceId }) => {
+        const room = rooms[roomID];
+        if (!room || room.gameState !== 'PLAYING') return;
+
+        const animal = room.animals.find(a => a.instanceId === instanceId);
+        const targets = Array.isArray(room.target) ? room.target : [room.target];
+
+        // Kiểm tra xem con vật này có nằm trong danh sách mục tiêu không
+        const isCorrect = targets.some(t => t.id === animal.id || t.name === animal.name);
+
+        if (isCorrect) {
+            room.players[socket.id].score = room.players[socket.id].score + 1;
+        } else {
+            room.players[socket.id].score = room.players[socket.id].score - 1;
+        }
+    });
+
+    // Server side
+    socket.on('select_animal111', ({ roomID, instanceId }) => {
+        const room = rooms[roomID];
+        if (!room || room.gameState !== 'PLAYING') return;
+
+        const animal = room.animals.find(a => a.instanceId === instanceId);
+        const targets = Array.isArray(room.target) ? room.target : [room.target];
+
+        // Kiểm tra xem con vật này có nằm trong danh sách mục tiêu không
+        const isCorrect = targets.some(t => t.id === animal.id || t.name === animal.name);
+
+        if (!isCorrect) {
+            // --- LOGIC TRỪ ĐIỂM ---
+            const penalty = 10; // Số điểm trừ
+            room.players[socket.id].score = Math.max(0, (room.players[socket.id].score || 0) - penalty);
+
+            // Gửi thông báo sai cho riêng người chơi này hoặc cả phòng
+            socket.emit('wrong_answer', {
+                instanceId,
+                penalty,
+                newScore: room.players[socket.id].score
+            });
+
+            // Cập nhật bảng điểm cho cả phòng
+            io.to(roomID).emit('update_scores', room.players);
         }
     });
 
