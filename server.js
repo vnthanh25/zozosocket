@@ -289,24 +289,24 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('submit_wrong222', ({ roomID }) => {
-        const room = rooms[roomID];
-        if (room && room.players && room.players[socket.id]) {
-            // 1. Tính toán điểm mới
-            const currentScore = room.players[socket.id].score || 0;
-            const newScore = currentScore - 1;
+    // socket.on('submit_wrong222', ({ roomID }) => {
+    //     const room = rooms[roomID];
+    //     if (room && room.players && room.players[socket.id]) {
+    //         // 1. Tính toán điểm mới
+    //         const currentScore = room.players[socket.id].score || 0;
+    //         const newScore = currentScore - 1;
 
-            // 2. Cập nhật vào room (Mutation)
-            room.players[socket.id].score = newScore;
+    //         // 2. Cập nhật vào room (Mutation)
+    //         room.players[socket.id].score = newScore;
 
-            // 3. QUAN TRỌNG: Tạo một bản sao hoàn toàn mới của Object players để gửi đi
-            // Điều này đảm bảo React ở Client nhận thấy sự thay đổi địa chỉ vùng nhớ
-            const playersSnapshot = JSON.parse(JSON.stringify(room.players));
+    //         // 3. QUAN TRỌNG: Tạo một bản sao hoàn toàn mới của Object players để gửi đi
+    //         // Điều này đảm bảo React ở Client nhận thấy sự thay đổi địa chỉ vùng nhớ
+    //         const playersSnapshot = JSON.parse(JSON.stringify(room.players));
 
-            console.log(`Player ${socket.id} sai, điểm mới: ${newScore}`);
-            io.to(roomID).emit('update_scores', Object.values(playersSnapshot));
-        }
-    });
+    //         console.log(`Player ${socket.id} sai, điểm mới: ${newScore}`);
+    //         io.to(roomID).emit('update_scores', Object.values(playersSnapshot));
+    //     }
+    // });
 
     socket.on('submit_wrong', ({ roomID }) => {
         const room = rooms[roomID];
@@ -319,9 +319,7 @@ io.on('connection', (socket) => {
 
             // // Cập nhật lại cho cả phòng thấy bảng điểm mới
             // io.to(roomID).emit('update_scores', Object.values(room.players));
-            // socket.emit('update_score', { score: currentPlayer.score });
-
-            io.to(roomID).emit('update_players', Object.values(room.players));
+            socket.emit('update_score', { score: currentPlayer.score });
         }
     });
 
