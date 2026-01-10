@@ -395,6 +395,171 @@ io.on('connection', (socket) => {
             }
         }
     });
+
+
+
+    // Hàm tạo dữ liệu lượt chơi (Helper)
+    const createSuggestTurnData = (roomID) => {
+        const room = rooms[roomID];
+        if (!room) return;
+
+        const config = room.config;
+        const targetCount = parseInt(config.targetCount) || 3;
+        let gridSize = parseInt(config.gridSize) || 6;      // Lấy từ Client
+
+        if (gridSize < targetCount * 2) gridSize = targetCount * 2;
+
+
+        // 1. Chọn ra danh sách các loài sẽ tham gia ván này
+        const selectedSpecies = [...ZODIAC_DATA]
+            .sort(() => 0.5 - Math.random())
+            .slice(0, Math.min(gridSize, 12));
+        // 2. Tạo lưới bằng cách lặp lại các loài trong selectedSpecies cho đến khi đủ gridSize
+        let animalsRaw = [];
+        for (let i = 0; i < gridSize; i++) {
+            // Lấy con vật theo cơ chế xoay vòng (Round-robin)
+            const baseAnimal = selectedSpecies[i];
+            animalsRaw.push({
+                ...baseAnimal,
+                instanceId: Math.random().toString(36).substr(2, 9)
+            });
+        }
+        // 3. Xáo trộn toàn bộ lưới để vị trí các con trùng nhau không nằm cạnh nhau một cách máy móc
+        const animals = animalsRaw.sort(() => 0.5 - Math.random());
+
+        return {
+            currentTurn: room.currentTurn + 1,
+            animals,
+        };
+    };
+
+    const sendNewTurnSuggest = (roomID) => {
+        const room = rooms[roomID];
+        if (!room) return;
+
+        const newTurn = createSuggestTurnData(roomID);
+        io.to(roomID).emit('new_turn_suggest_data', newTurn);
+
+        // Cập room.
+        room.currentTurn = newTurn.currentTurn;
+        room.animals = newTurn.animals;
+        room.gameState = 'SELECTING';
+        Object.keys(room.selections).forEach(sid => {
+            room.selections[sid] = [];
+        });
+        // rooms[roomID] = {
+        //     ...room,
+        //     ...newTurn,
+        // }
+    }
+
+    socket.on('start_game_suggest', ({ roomID, config }) => {
+        const room = rooms[roomID];
+        if (!room) return;
+
+        // // Cấu trúc lưu trữ trong mỗi room
+        // room = {
+        //     currentTurn,
+        //     animals,      // 12 con vật hiển thị trên lưới
+        //     target: [],       // Kết quả sau khi Host Confirm
+        //     gameState: 'SELECTING', // SELECTING hoặc REVEALED
+        //     selections: {
+        //         // "socketId": [instanceId1, instanceId2]
+        //     },
+        // };
+
+        let targetCount = parseInt(config.targetCount) || 3;
+        let gridSize = parseInt(config.gridSize) || 12;
+
+        // 3. Cập nhật và Đồng bộ
+        const newConfig = {
+            ...config, // Giữ lại các config khác nếu có
+            targetCount,
+            gridSize,
+        };
+        room.config = newConfig; // Lưu cấu hình (bao gồm turnMode: 'personal' hoặc 'room')
+        // Gửi cho tất cả mọi người trong phòng
+        io.to(roomID).emit('update_config', room.config);
+
+        // Reset điểm và số lượt cho từng người
+        Object.keys(room.players).forEach(id => {
+            room.players[id].score = 0;
+        });
+        io.to(roomID).emit('update_players', Object.values(room.players));
+
+
+        // Phát lượt đầu tiên cho mọi người
+        room.currentTurn = 0;
+        room.selections = {};
+        sendNewTurnSuggest(roomID);
+    });
+
+    socket.on('new_turn_suggest', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (!room) return;
+
+        sendNewTurnSuggest(roomID);
+    });
+
+    // 1. Khi người chơi chọn hoặc bỏ chọn con vật
+    socket.on('toggle_selection', ({ roomID, instanceId }) => {
+        const room = rooms[roomID];
+        if (!room || room.gameState !== 'SELECTING') return;
+
+        if (!room.selections[socket.id]) {
+            room.selections[socket.id] = [];
+        }
+
+        const index = room.selections[socket.id].indexOf(instanceId);
+        if (index > -1) {
+            room.selections[socket.id].splice(index, 1); // Bỏ chọn
+        } else {
+            // Giới hạn chọn tối đa 3 con (ví dụ)
+            if (room.selections[socket.id].length < room.config.gridSize) {
+                room.selections[socket.id].push(instanceId);
+            }
+        }
+
+        // Gửi cập nhật riêng cho người chơi đó để đồng bộ
+        socket.emit('your_selections_updated', room.selections[socket.id]);
+    });
+
+    // 2. Khi Host nhấn Confirm
+    socket.on('host_confirm_reveal', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (!room || room.gameState !== 'SELECTING') return;
+
+        let results = [];
+        for (let index = 0; index < room.config.targetCount; index++) {
+            // Sinh ngẫu nhiên 3 mục tiêu từ danh sách animals ban đầu (có thể trùng).
+            const shuffled = [...room.animals].sort(() => 0.5 - Math.random());
+            results[index] = shuffled[index];
+        }
+
+        room.target = results;
+        room.gameState = 'REVEALED';
+
+        // Tính toán điểm cho tất cả người chơi
+        Object.keys(room.selections).forEach(sid => {
+            const userPicks = room.selections[sid]; // [id1, id2]
+            let pointsEarned = userPicks.length * -1; // Trừ điểm trước số lượng chọn.
+
+            results.forEach(result => {
+                const isHit = userPicks.some(pickId => result.instanceId === pickId);
+                if (isHit) pointsEarned += 2; // Trúng được đ.
+            });
+
+            room.players[sid].score = (room.players[sid].score || 0) + pointsEarned;
+        });
+
+        // Thông báo kết quả cho cả phòng
+        io.to(roomID).emit('results_revealed', {
+            targets: results,
+            allSelections: room.selections,
+            updatedPlayers: Object.values(room.players)
+        });
+    });
+
 });
 
 server.listen(port, () => console.log("Server running on port " + port));
