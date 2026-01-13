@@ -162,7 +162,7 @@ io.on('connection', (socket) => {
 
         // 3. Cập nhật và Đồng bộ
         const newConfig = {
-            ...room.config, // Giữ lại các config khác nếu có
+            ...config, // Giữ lại các config khác nếu có
             maxTurns,
             maxGameTime,
             timePerTurn,
