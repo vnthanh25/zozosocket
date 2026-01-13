@@ -529,12 +529,8 @@ io.on('connection', (socket) => {
         const room = rooms[roomID];
         if (!room || room.gameState !== 'SELECTING') return;
 
-        let results = [];
-        for (let index = 0; index < room.config.targetCount; index++) {
-            // Sinh ngẫu nhiên 3 mục tiêu từ danh sách animals ban đầu (có thể trùng).
-            const shuffled = [...room.animals].sort(() => 0.5 - Math.random());
-            results[index] = shuffled[index];
-        }
+        const shuffled = [...room.animals].sort(() => 0.5 - Math.random());
+        const results = shuffled.slice(0, room.config.targetCount);
 
         room.target = results;
         room.gameState = 'REVEALED';
