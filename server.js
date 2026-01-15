@@ -632,18 +632,7 @@ io.on('connection', (socket) => {
         Object.keys(room.selections).forEach(sid => {
             const userPicks = room.selections[sid]; // [id1, id2]
             const userPickIds = room.animals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
-            let pointsEarned = 0; //userPicks.length * -1; // Trừ điểm trước số lượng chọn.
-            // let pickCount = userPicks.length;
-            // targets.forEach(result => {
-            //     const isHit = userPickIds.some(pickId => result.id === pickId);
-            //     if (isHit) {
-            //         pointsEarned += 1; // Trúng được đ.
-            //         pickCount--;
-            //     }
-            // });
-            // pointsEarned -= pickCount;
-
-
+            let pointsEarned = 0;
             userPickIds.forEach(pickId => {
                 const count = targets.filter(item => item.id === pickId).length;
                 if (count < 1) pointsEarned--
