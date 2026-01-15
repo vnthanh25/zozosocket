@@ -631,11 +631,23 @@ io.on('connection', (socket) => {
         // Tính toán điểm cho tất cả người chơi
         Object.keys(room.selections).forEach(sid => {
             const userPicks = room.selections[sid]; // [id1, id2]
-            let pointsEarned = userPicks.length * -1; // Trừ điểm trước số lượng chọn.
+            const userPickIds = room.animals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
+            let pointsEarned = 0; //userPicks.length * -1; // Trừ điểm trước số lượng chọn.
+            // let pickCount = userPicks.length;
+            // targets.forEach(result => {
+            //     const isHit = userPickIds.some(pickId => result.id === pickId);
+            //     if (isHit) {
+            //         pointsEarned += 1; // Trúng được đ.
+            //         pickCount--;
+            //     }
+            // });
+            // pointsEarned -= pickCount;
 
-            targets.forEach(result => {
-                const isHit = userPicks.some(pickId => result.instanceId === pickId);
-                if (isHit) pointsEarned += 2; // Trúng được đ.
+
+            userPickIds.forEach(pickId => {
+                const count = targets.filter(item => item.id === pickId).length;
+                if (count < 1) pointsEarned--
+                else pointsEarned += count;
             });
 
             room.players[sid].score = (room.players[sid].score || 0) + pointsEarned;
