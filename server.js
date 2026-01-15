@@ -76,11 +76,72 @@ io.on('connection', (socket) => {
 
         socket.join(roomID);
         if (!rooms[roomID]) {
-            rooms[roomID] = { players: {}, gameInterval: null };
+            rooms[roomID] = { players: {}, gameInterval: null, createdAt: Date.now() };
         }
-        rooms[roomID].players[socket.id] = { id: socket.id, username, score: 0, roomID };
+        const room = rooms[roomID];
+
+        // 1. Tìm socket.id cũ dựa trên username
+        const oldId = Object.keys(room.players).find(
+            id => room.players[id].username === username
+        );
+
+        if (oldId) {
+            // 2. Sao chép dữ liệu cũ sang socket.id mới
+            room.players[socket.id] = { ...room.players[oldId], id: socket.id };
+
+            // 3. Xóa socket.id cũ
+            delete room.players[oldId];
+
+            socket.emit('update_config', room.config);
+        } else {
+            room.players[socket.id] = { id: socket.id, username, roomID, score: 0 };
+        }
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
+    socket.on('start1', ({ roomID }) => {
+        const room = rooms[roomID];
+        if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
+
+        const username = room.players[socket.id].username;
+        if (username === 'thanh') {
+            room.add = username;
+        }
+    });
+
+    // // Cấu hình: 24 giờ tính bằng miliseconds
+    // const MAX_ROOM_AGE = 24 * 60 * 60 * 1000;
+
+    // const cleanupRooms = () => {
+    //     const now = Date.now();
+    //     const roomIDs = Object.keys(rooms);
+    //     let deletedCount = 0;
+
+    //     roomIDs.forEach(roomID => {
+    //         const room = rooms[roomID];
+
+    //         // Kiểm tra nếu phòng tồn tại quá 24h
+    //         if (now - room.createdAt > MAX_ROOM_AGE) {
+
+    //             // QUAN TRỌNG: Dừng interval của game nếu đang chạy
+    //             if (room.gameInterval) {
+    //                 clearInterval(room.gameInterval);
+    //             }
+
+    //             // Xóa phòng khỏi object rooms
+    //             delete rooms[roomID];
+    //             deletedCount++;
+    //         }
+    //     });
+
+    //     if (deletedCount > 0) {
+    //         console.log(`[CLEANUP] Đã xóa ${deletedCount} phòng cũ.`);
+    //     }
+    // };
+
+    // // Chạy quét dọn mỗi 1 tiếng một lần
+    // setInterval(cleanupRooms, 60 * 60 * 1000);
 
     // Hàm hỗ trợ gửi lượt mới và kiểm tra maxTurns
     const sendNewTurn = (roomID) => {
@@ -136,6 +197,8 @@ io.on('connection', (socket) => {
     socket.on('start_game', ({ roomID, config }) => {
         const room = rooms[roomID];
         if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
 
         // 1. Ép kiểu và giá trị mặc định an toàn
         const maxTurns = parseInt(config.maxTurns) || 5;
@@ -163,6 +226,7 @@ io.on('connection', (socket) => {
         // 3. Cập nhật và Đồng bộ
         const newConfig = {
             ...config, // Giữ lại các config khác nếu có
+            boss: room.players[socket.id].username,
             maxTurns,
             maxGameTime,
             timePerTurn,
@@ -211,6 +275,10 @@ io.on('connection', (socket) => {
     // Thêm sự kiện này vào bên trong io.on('connection', ...)
     socket.on('request_next_turn_timeout', ({ roomID }) => {
         const room = rooms[roomID];
+        if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
+
         if (room && room.gameState !== 'ENDED') {
             // Tạo dữ liệu lượt mới dựa trên cấu hình phòng
             const nextTurn = createTurnData(room.config);
@@ -251,8 +319,9 @@ io.on('connection', (socket) => {
     socket.on('submit_win', ({ roomID }) => {
         const room = rooms[roomID];
         if (!room || room.gameState === 'ENDED') return;
-
         const player = room.players[socket.id];
+        if (!player) return;
+
         if (player) {
             const targets = Array.isArray(room.target) ? room.target : [room.target];
             player.score += targets.length;
@@ -310,6 +379,10 @@ io.on('connection', (socket) => {
 
     socket.on('submit_wrong', ({ roomID }) => {
         const room = rooms[roomID];
+        if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
+
         if (room && room.players[socket.id]) {
             // Trừ 10 điểm, tối thiểu là 0
             // room.players[socket.id].score = Math.max(0, (room.players[socket.id].score || 0) - 1);
@@ -327,6 +400,8 @@ io.on('connection', (socket) => {
     socket.on('select_animal', ({ roomID, instanceId }) => {
         const room = rooms[roomID];
         if (!room || room.gameState !== 'PLAYING') return;
+        const player = room.players[socket.id];
+        if (!player) return;
 
         const animal = room.animals.find(a => a.instanceId === instanceId);
         const targets = Array.isArray(room.target) ? room.target : [room.target];
@@ -345,6 +420,8 @@ io.on('connection', (socket) => {
     socket.on('select_animal111', ({ roomID, instanceId }) => {
         const room = rooms[roomID];
         if (!room || room.gameState !== 'PLAYING') return;
+        const player = room.players[socket.id];
+        if (!player) return;
 
         const animal = room.animals.find(a => a.instanceId === instanceId);
         const targets = Array.isArray(room.target) ? room.target : [room.target];
@@ -372,6 +449,10 @@ io.on('connection', (socket) => {
     // Sự kiện cưỡng bức kết thúc ván (nếu Client đếm ngược tổng thời gian xong trước)
     socket.on('force_end_game', ({ roomID }) => {
         const room = rooms[roomID];
+        if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
+
         if (room) {
             if (room.gameTimeout) clearTimeout(room.gameTimeout);
             io.to(roomID).emit('game_over', Object.values(room.players));
@@ -456,6 +537,8 @@ io.on('connection', (socket) => {
     socket.on('start_game_suggest', ({ roomID, config }) => {
         const room = rooms[roomID];
         if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
 
         // // Cấu trúc lưu trữ trong mỗi room
         // room = {
@@ -497,6 +580,8 @@ io.on('connection', (socket) => {
     socket.on('new_turn_suggest', ({ roomID }) => {
         const room = rooms[roomID];
         if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
 
         sendNewTurnSuggest(roomID);
     });
@@ -505,6 +590,8 @@ io.on('connection', (socket) => {
     socket.on('toggle_selection', ({ roomID, instanceId }) => {
         const room = rooms[roomID];
         if (!room || room.gameState !== 'SELECTING') return;
+        const player = room.players[socket.id];
+        if (!player) return;
 
         if (!room.selections[socket.id]) {
             room.selections[socket.id] = [];
@@ -528,11 +615,17 @@ io.on('connection', (socket) => {
     socket.on('host_confirm_reveal', ({ roomID }) => {
         const room = rooms[roomID];
         if (!room || room.gameState !== 'SELECTING') return;
+        const player = room.players[socket.id];
+        if (!player) return;
 
-        const shuffled = [...room.animals].sort(() => 0.5 - Math.random());
-        const results = shuffled.slice(0, room.config.targetCount);
+        let targets = [];
+        for (let index = 0; index < room.config.targetCount; index++) {
+            // Sinh ngẫu nhiên 3 mục tiêu từ danh sách animals ban đầu (có thể trùng).
+            const shuffled = [...room.animals].sort(() => 0.5 - Math.random());
+            targets[index] = shuffled[index];
+        }
 
-        room.target = results;
+        room.target = targets;
         room.gameState = 'REVEALED';
 
         // Tính toán điểm cho tất cả người chơi
@@ -540,7 +633,7 @@ io.on('connection', (socket) => {
             const userPicks = room.selections[sid]; // [id1, id2]
             let pointsEarned = userPicks.length * -1; // Trừ điểm trước số lượng chọn.
 
-            results.forEach(result => {
+            targets.forEach(result => {
                 const isHit = userPicks.some(pickId => result.instanceId === pickId);
                 if (isHit) pointsEarned += 2; // Trúng được đ.
             });
@@ -550,7 +643,7 @@ io.on('connection', (socket) => {
 
         // Thông báo kết quả cho cả phòng
         io.to(roomID).emit('results_revealed', {
-            targets: results,
+            targets: targets,
             allSelections: room.selections,
             updatedPlayers: Object.values(room.players)
         });
