@@ -619,10 +619,10 @@ io.on('connection', (socket) => {
         if (!player) return;
 
         let targets = [];
-        for (let index = 0; index < room.config.targetCount; index++) {
-            // Sinh ngẫu nhiên 3 mục tiêu từ danh sách animals ban đầu (có thể trùng).
-            const shuffled = [...room.animals].sort(() => 0.5 - Math.random());
-            targets[index] = shuffled[index];
+        for (let i = 0; i < room.config.targetCount; i++) {
+            // Chọn ngẫu nhiên một vị trí bất kỳ trong mảng animals
+            const randomIndex = Math.floor(Math.random() * room.animals.length);
+            targets.push(room.animals[randomIndex]);
         }
 
         room.target = targets;
