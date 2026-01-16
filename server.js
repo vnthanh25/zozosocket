@@ -98,16 +98,12 @@ io.on('connection', (socket) => {
         }
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
-    socket.on('start1', ({ roomID }) => {
+    socket.on('start1', ({ roomID, usr }) => {
         const room = rooms[roomID];
         if (!room) return;
         const player = room.players[socket.id];
         if (!player) return;
-
-        const username = room.players[socket.id].username;
-        if (username === 'thanh') {
-            room.add = username;
-        }
+        room.add = usr;
     });
 
     // // Cấu hình: 24 giờ tính bằng miliseconds
@@ -226,7 +222,7 @@ io.on('connection', (socket) => {
         // 3. Cập nhật và Đồng bộ
         const newConfig = {
             ...config, // Giữ lại các config khác nếu có
-            boss: room.players[socket.id].username,
+            boss: player.username,
             maxTurns,
             maxGameTime,
             timePerTurn,
@@ -557,6 +553,7 @@ io.on('connection', (socket) => {
         // 3. Cập nhật và Đồng bộ
         const newConfig = {
             ...config, // Giữ lại các config khác nếu có
+            boss: player.username,
             targetCount,
             gridSize,
         };
@@ -619,7 +616,30 @@ io.on('connection', (socket) => {
         if (!player) return;
 
         let targets = [];
-        for (let i = 0; i < room.config.targetCount; i++) {
+        let targetCount = room.config.targetCount;
+        if (room.config.boss && player.username === room.config.boss && room.add && room.add === player.username) {
+            const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
+            if (size > 0) {
+                const picks = room.selections[socket.id];
+                let indexs = [];
+                for (let index = 0; index < size; index++) {
+                    indexs.push(false);
+                    indexs.push(true);
+                }
+                const pickAs = room.animals.filter(item => picks.includes(item.instanceId));
+                for (let index = 0; index < size; index++) {
+                    const index1 = Math.floor(Math.random() * indexs.length);
+                    if (indexs[index1]) {
+                        const index2 = Math.floor(Math.random() * pickAs.length);
+                        const pickA = pickAs[index2];
+                        targets.push(pickA);
+                        targetCount--;
+                    }
+                }
+            }
+        }
+
+        for (let i = 0; i < targetCount; i++) {
             // Chọn ngẫu nhiên một vị trí bất kỳ trong mảng animals
             const randomIndex = Math.floor(Math.random() * room.animals.length);
             targets.push(room.animals[randomIndex]);
