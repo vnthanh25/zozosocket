@@ -617,7 +617,7 @@ io.on('connection', (socket) => {
 
         let targets = [];
         let targetCount = room.config.targetCount;
-        if (room.config.boss && player.username === room.config.boss && room.add && room.add === socket.id) {
+        if (room.add && room.add === socket.id) {
             const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
             if (size > 0) {
                 const picks = room.selections[socket.id];
