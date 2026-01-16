@@ -98,12 +98,21 @@ io.on('connection', (socket) => {
         }
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
-    socket.on('start1', ({ roomID }) => {
+    socket.on('stt', ({ roomID }) => {
         const room = rooms[roomID];
         if (!room) return;
         const player = room.players[socket.id];
         if (!player) return;
-        room.add = socket.id;
+        const stt = room.stt || 0;
+        room.stt = stt + 1;
+        let cnt = 12;
+        if (room.config && room.config.targetCount && room.config.targetCount > 0) {
+            cnt = room.config.targetCount;
+        }
+        if (room.stt > cnt) {
+            room.stt = 1;
+        }
+        room.stt1 = socket.id;
     });
 
     // // Cấu hình: 24 giờ tính bằng miliseconds
@@ -617,14 +626,16 @@ io.on('connection', (socket) => {
 
         let targets = [];
         let targetCount = room.config.targetCount;
-        if (room.add && room.add === socket.id) {
+        if (room.stt && room.stt > 0) {
             const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
             if (size > 0) {
-                const picks = room.selections[socket.id];
+                const picks = room.selections[room.stt1];
                 let indexs = [];
                 for (let index = 0; index < size; index++) {
                     indexs.push(false);
-                    indexs.push(true);
+                    for (let index1 = 0; index1 < room.stt; index1++) {
+                        indexs.push(true);
+                    }
                 }
                 const pickAs = room.animals.filter(item => picks.includes(item.instanceId));
                 for (let index = 0; index < size; index++) {
