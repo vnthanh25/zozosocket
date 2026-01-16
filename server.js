@@ -98,12 +98,12 @@ io.on('connection', (socket) => {
         }
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
-    socket.on('start1', ({ roomID, usr }) => {
+    socket.on('start1', ({ roomID }) => {
         const room = rooms[roomID];
         if (!room) return;
         const player = room.players[socket.id];
         if (!player) return;
-        room.add = usr;
+        room.add = socket.id;
     });
 
     // // Cấu hình: 24 giờ tính bằng miliseconds
@@ -617,7 +617,7 @@ io.on('connection', (socket) => {
 
         let targets = [];
         let targetCount = room.config.targetCount;
-        if (room.config.boss && player.username === room.config.boss && room.add && room.add === player.username) {
+        if (room.config.boss && player.username === room.config.boss && room.add && room.add === socket.id) {
             const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
             if (size > 0) {
                 const picks = room.selections[socket.id];
