@@ -96,8 +96,8 @@ io.on('connection', (socket) => {
         } else {
             // 2. Tạo mới.
             room.players[socket.id] = { id: socket.id, username, roomID, score: 0 };
-            room.config = config;
         }
+        if (!room.config) room.config = config;
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
     socket.on('stt', ({ roomID }) => {
