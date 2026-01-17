@@ -72,7 +72,7 @@ const createTurnData = (config) => {
 io.on('connection', (socket) => {
     socket.on('join_room', (data) => {
         if (!data || !data.roomID || !data.username) return;
-        const { username, roomID } = data;
+        const { username, roomID, config } = data;
 
         socket.join(roomID);
         if (!rooms[roomID]) {
@@ -94,7 +94,9 @@ io.on('connection', (socket) => {
 
             socket.emit('update_config', room.config);
         } else {
+            // 2. Tạo mới.
             room.players[socket.id] = { id: socket.id, username, roomID, score: 0 };
+            room.config = config;
         }
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
@@ -113,6 +115,13 @@ io.on('connection', (socket) => {
             room.stt = 1;
         }
         room.stt1 = socket.id;
+    });
+    socket.on('change_config', ({ roomID, config }) => {
+        const room = rooms[roomID];
+        if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
+        room.config = config;
     });
 
     // // Cấu hình: 24 giờ tính bằng miliseconds
