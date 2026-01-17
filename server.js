@@ -105,15 +105,12 @@ io.on('connection', (socket) => {
         if (!room) return;
         const player = room.players[socket.id];
         if (!player) return;
-        const stt = room.stt || 0;
-        room.stt = stt + 1;
-        let cnt = 12;
-        if (room.config && room.config.targetCount && room.config.targetCount > 0) {
-            cnt = room.config.targetCount;
+        if (!room.config || !room.config.targetCount) return;
+        if (!room.stt || room.stt1 !== socket.id) {
+            room.stt = 0;
         }
-        if (room.stt > cnt) {
-            room.stt = 1;
-        }
+        room.stt += 1;
+        if (room.stt > room.config.targetCount) room.stt = 0;
         room.stt1 = socket.id;
     });
     socket.on('change_config', ({ roomID, config }) => {
