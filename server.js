@@ -85,7 +85,10 @@ io.on('connection', (socket) => {
             id => room.players[id].username === username
         );
 
-        if (oldId) {
+        if (!oldId) {
+            // 2. Tạo mới.
+            room.players[socket.id] = { id: socket.id, username, roomID, score: 0 };
+        } else {
             // 2. Sao chép dữ liệu cũ sang socket.id mới
             room.players[socket.id] = { ...room.players[oldId], id: socket.id };
 
@@ -93,9 +96,6 @@ io.on('connection', (socket) => {
             delete room.players[oldId];
 
             socket.emit('update_config', room.config);
-        } else {
-            // 2. Tạo mới.
-            room.players[socket.id] = { id: socket.id, username, roomID, score: 0 };
         }
         if (!room.config) room.config = config;
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
@@ -551,17 +551,6 @@ io.on('connection', (socket) => {
         const player = room.players[socket.id];
         if (!player) return;
 
-        // // Cấu trúc lưu trữ trong mỗi room
-        // room = {
-        //     currentTurn,
-        //     animals,      // 12 con vật hiển thị trên lưới
-        //     target: [],       // Kết quả sau khi Host Confirm
-        //     gameState: 'SELECTING', // SELECTING hoặc REVEALED
-        //     selections: {
-        //         // "socketId": [instanceId1, instanceId2]
-        //     },
-        // };
-
         let targetCount = parseInt(config.targetCount) || 3;
         let gridSize = parseInt(config.gridSize) || 12;
 
@@ -635,9 +624,10 @@ io.on('connection', (socket) => {
         let targetCount = room.config.targetCount;
         const isStt = room.stt && room.stt > 0;
         if (isStt) {
-            const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
+            // const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
+            const size = targetCount;
             if (size > 0) {
-                if (room.boos !== socket.id) {
+                if (room.config.boss !== player.username) {
                     const picks = room.selections[room.stt1];
                     let indexs = [];
                     for (let index = 0; index < size; index++) {
@@ -663,7 +653,7 @@ io.on('connection', (socket) => {
                         const userPicks = room.selections[sid];
                         const userPickIds = rAnimals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
                         const vPickIds = userPickIds.filter(id => !pickIds.includes(id));
-                        pickIds.push(pickIds);
+                        vPickIds.forEach(pickId => pickIds.push(pickId));
                     });
                     let indexs = [];
                     for (let index = 0; index < size; index++) {
@@ -673,12 +663,13 @@ io.on('connection', (socket) => {
                             indexs.push(true);
                         }
                     }
-                    for (let index = 0; index < size; index++) {
+                    for (let index = 0; index < pickIds.length; index++) {
                         const index1 = Math.floor(Math.random() * indexs.length);
-                        if (indexs[index1]) {
-                            rAnimals.splice(Math.floor(Math.random() * rAnimals.length), 1);
+                        if (!indexs[index1]) {
+                            delete pickIds[index];
                         }
                     }
+                    rAnimals = rAnimals.filter(item => !pickIds.includes(item.id));
                 }
             }
         }
@@ -695,7 +686,7 @@ io.on('connection', (socket) => {
         // Tính toán điểm cho tất cả người chơi
         Object.keys(room.selections).forEach(sid => {
             const userPicks = room.selections[sid];
-            const userPickIds = rAnimals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
+            const userPickIds = room.animals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
             let pointsEarned = 0;
             userPickIds.forEach(pickId => {
                 const count = targets.filter(item => item.id === pickId).length;
