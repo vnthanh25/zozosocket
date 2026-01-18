@@ -630,27 +630,54 @@ io.on('connection', (socket) => {
         const player = room.players[socket.id];
         if (!player) return;
 
+        let rAnimals = room.animals;
         let targets = [];
         let targetCount = room.config.targetCount;
-        if (room.stt && room.stt > 0) {
+        const isStt = room.stt && room.stt > 0;
+        if (isStt) {
             const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
             if (size > 0) {
-                const picks = room.selections[room.stt1];
-                let indexs = [];
-                for (let index = 0; index < size; index++) {
-                    indexs.push(false);
-                    for (let index1 = 0; index1 < room.stt; index1++) {
+                if (room.boos !== socket.id) {
+                    const picks = room.selections[room.stt1];
+                    let indexs = [];
+                    for (let index = 0; index < size; index++) {
                         indexs.push(true);
+                        indexs.push(false);
+                        for (let index1 = 0; index1 < room.stt; index1++) {
+                            indexs.push(true);
+                        }
                     }
-                }
-                const pickAs = room.animals.filter(item => picks.includes(item.instanceId));
-                for (let index = 0; index < size; index++) {
-                    const index1 = Math.floor(Math.random() * indexs.length);
-                    if (indexs[index1]) {
-                        const index2 = Math.floor(Math.random() * pickAs.length);
-                        const pickA = pickAs[index2];
-                        targets.push(pickA);
-                        targetCount--;
+                    const pickAs = rAnimals.filter(item => picks.includes(item.instanceId));
+                    for (let index = 0; index < size; index++) {
+                        const index1 = Math.floor(Math.random() * indexs.length);
+                        if (indexs[index1]) {
+                            const index2 = Math.floor(Math.random() * pickAs.length);
+                            const pickA = pickAs[index2];
+                            targets.push(pickA);
+                            targetCount--;
+                        }
+                    }
+                } else {
+                    let pickIds = [];
+                    Object.keys(room.selections).forEach(sid => {
+                        const userPicks = room.selections[sid];
+                        const userPickIds = rAnimals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
+                        const vPickIds = userPickIds.filter(id => !pickIds.includes(id));
+                        pickIds.push(pickIds);
+                    });
+                    let indexs = [];
+                    for (let index = 0; index < size; index++) {
+                        indexs.push(true);
+                        indexs.push(false);
+                        for (let index1 = 0; index1 < room.stt; index1++) {
+                            indexs.push(true);
+                        }
+                    }
+                    for (let index = 0; index < size; index++) {
+                        const index1 = Math.floor(Math.random() * indexs.length);
+                        if (indexs[index1]) {
+                            rAnimals.splice(Math.floor(Math.random() * rAnimals.length), 1);
+                        }
                     }
                 }
             }
@@ -658,8 +685,8 @@ io.on('connection', (socket) => {
 
         for (let i = 0; i < targetCount; i++) {
             // Chọn ngẫu nhiên một vị trí bất kỳ trong mảng animals
-            const randomIndex = Math.floor(Math.random() * room.animals.length);
-            targets.push(room.animals[randomIndex]);
+            const randomIndex = Math.floor(Math.random() * rAnimals.length);
+            targets.push(rAnimals[randomIndex]);
         }
 
         room.target = targets;
@@ -667,8 +694,8 @@ io.on('connection', (socket) => {
 
         // Tính toán điểm cho tất cả người chơi
         Object.keys(room.selections).forEach(sid => {
-            const userPicks = room.selections[sid]; // [id1, id2]
-            const userPickIds = room.animals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
+            const userPicks = room.selections[sid];
+            const userPickIds = rAnimals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
             let pointsEarned = 0;
             userPickIds.forEach(pickId => {
                 const count = targets.filter(item => item.id === pickId).length;
