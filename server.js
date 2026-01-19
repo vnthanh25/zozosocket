@@ -87,10 +87,10 @@ io.on('connection', (socket) => {
 
         if (!oldId) {
             // 2. Tạo mới.
-            room.players[socket.id] = { id: socket.id, username, roomID, score: 0 };
+            room.players[socket.id] = { id: socket.id, username, roomID, score: 0, isActive: true };
         } else {
             // 2. Sao chép dữ liệu cũ sang socket.id mới
-            room.players[socket.id] = { ...room.players[oldId], id: socket.id };
+            room.players[socket.id] = { ...room.players[oldId], id: socket.id, isActive: true };
 
             // 3. Xóa socket.id cũ
             delete room.players[oldId];
@@ -99,6 +99,13 @@ io.on('connection', (socket) => {
         }
         if (!room.config) room.config = config;
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
+    });
+    socket.on('change_config', ({ roomID, config }) => {
+        const room = rooms[roomID];
+        if (!room) return;
+        const player = room.players[socket.id];
+        if (!player) return;
+        room.config = config;
     });
     socket.on('stt', ({ roomID }) => {
         const room = rooms[roomID];
@@ -112,13 +119,6 @@ io.on('connection', (socket) => {
         room.stt += 1;
         if (room.stt > room.config.targetCount) room.stt = 0;
         room.stt1 = socket.id;
-    });
-    socket.on('change_config', ({ roomID, config }) => {
-        const room = rooms[roomID];
-        if (!room) return;
-        const player = room.players[socket.id];
-        if (!player) return;
-        room.config = config;
     });
 
     // // Cấu hình: 24 giờ tính bằng miliseconds
@@ -474,12 +474,12 @@ io.on('connection', (socket) => {
         // Tìm xem socket này ở phòng nào để xóa
         for (const roomID in rooms) {
             if (rooms[roomID].players[socket.id]) {
-                const username = rooms[roomID].players[socket.id].username;
-                delete rooms[roomID].players[socket.id];
+                // Set current player is not active.
+                rooms[roomID].players[socket.id].isActive = false;
                 io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
 
                 // Xóa phòng nếu không còn ai
-                if (Object.keys(rooms[roomID].players).length === 0) {
+                if (Object.keys(rooms[roomID].players).filter(item => item.isActive).length === 0) {
                     if (rooms[roomID].gameInterval) clearInterval(rooms[roomID].gameInterval);
                     delete rooms[roomID];
                 }
