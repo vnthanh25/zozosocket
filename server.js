@@ -479,7 +479,7 @@ io.on('connection', (socket) => {
                 io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
 
                 // Xóa phòng nếu không còn ai
-                if (Object.keys(rooms[roomID].players).filter(item => item.isActive).length === 0) {
+                if (Object.values(rooms[roomID].players).filter(item => item.isActive).length === 0) {
                     if (rooms[roomID].gameInterval) clearInterval(rooms[roomID].gameInterval);
                     delete rooms[roomID];
                 }
