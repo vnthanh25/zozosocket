@@ -79,6 +79,10 @@ io.on('connection', (socket) => {
             rooms[roomID] = { players: {}, gameInterval: null, createdAt: Date.now() };
         }
         const room = rooms[roomID];
+        if (!room.config) room.config = config;
+
+        if (room.gameState)
+            socket.emit('update_room_info', { gameState: room.gameState });
 
         // 1. Tìm socket.id cũ dựa trên username
         const oldId = Object.keys(room.players).find(
@@ -95,9 +99,9 @@ io.on('connection', (socket) => {
             // 3. Xóa socket.id cũ
             delete room.players[oldId];
 
-            socket.emit('update_config', room.config);
+            if (room.config)
+                socket.emit('update_config', room.config);
         }
-        if (!room.config) room.config = config;
         io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
     });
     socket.on('change_config', ({ roomID, config }) => {
@@ -210,6 +214,11 @@ io.on('connection', (socket) => {
         if (!room) return;
         const player = room.players[socket.id];
         if (!player) return;
+
+        // if (room.gameState && room.gameState === 'SELECTING') {
+        //     io.to(roomID).emit('update_room_info', { gameState: room.gameState });
+        //     return;
+        // }
 
         // Lưu trạng thái vào room object
         room.gameState = 'PLAYING';
@@ -556,6 +565,11 @@ io.on('connection', (socket) => {
         if (!room) return;
         const player = room.players[socket.id];
         if (!player) return;
+
+        // if (room.gameState && room.gameState === 'SELECTING') {
+        //     io.to(roomID).emit('update_room_info', { gameState: room.gameState });
+        //     return;
+        // }
 
         // Lưu trạng thái vào room object
         room.gameState = 'PLAYING';
