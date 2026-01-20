@@ -88,7 +88,7 @@ io.on('connection', (socket) => {
         if (!oldId) {
             // 2. Tạo mới.
             room.players[socket.id] = { id: socket.id, username, roomID, score: 0, isActive: true };
-        } else {
+        } else if (oldId !== socket.id) {
             // 2. Sao chép dữ liệu cũ sang socket.id mới
             room.players[socket.id] = { ...room.players[oldId], id: socket.id, isActive: true };
 
