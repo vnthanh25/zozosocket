@@ -699,7 +699,9 @@ io.on('connection', (socket) => {
                 else pointsEarned += count;
             });
 
-            room.players[sid].score = (room.players[sid].score || 0) + pointsEarned;
+            if (room.players[sid]) {
+                room.players[sid].score = (room.players[sid].score || 0) + pointsEarned;
+            }
         });
 
         // Thông báo kết quả cho cả phòng
