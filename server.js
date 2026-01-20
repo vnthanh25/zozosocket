@@ -211,6 +211,10 @@ io.on('connection', (socket) => {
         const player = room.players[socket.id];
         if (!player) return;
 
+        // Lưu trạng thái vào room object
+        room.gameState = 'PLAYING';
+        io.to(roomID).emit('update_room_info', { gameState: room.gameState });
+
         // 1. Ép kiểu và giá trị mặc định an toàn
         const maxTurns = parseInt(config.maxTurns) || 5;
         const maxGameTime = parseInt(config.maxGameTime) || 60;
@@ -252,9 +256,6 @@ io.on('connection', (socket) => {
 
         // Gửi cho tất cả mọi người trong phòng
         io.to(roomID).emit('update_config', room.config);
-
-        // Lưu trạng thái vào room object
-        room.gameState = 'PLAYING';
 
         sendNewTurn(roomID);
 
@@ -550,6 +551,10 @@ io.on('connection', (socket) => {
         if (!room) return;
         const player = room.players[socket.id];
         if (!player) return;
+
+        // Lưu trạng thái vào room object
+        room.gameState = 'PLAYING';
+        io.to(roomID).emit('update_room_info', { gameState: room.gameState });
 
         let targetCount = parseInt(config.targetCount) || 3;
         let gridSize = parseInt(config.gridSize) || 12;
