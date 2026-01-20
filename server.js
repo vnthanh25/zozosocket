@@ -481,8 +481,13 @@ io.on('connection', (socket) => {
 
                 // Xóa phòng nếu không còn ai
                 if (Object.values(rooms[roomID].players).filter(item => item.isActive).length === 0) {
-                    if (rooms[roomID].gameInterval) clearInterval(rooms[roomID].gameInterval);
-                    delete rooms[roomID];
+                    // Chạy quét dọn phòng sau 1 tiếng.
+                    setTimeout(() => {
+                        if (Object.values(rooms[roomID].players).filter(item => item.isActive).length === 0) {
+                            if (rooms[roomID].gameInterval) clearInterval(rooms[roomID].gameInterval);
+                            delete rooms[roomID];
+                        }
+                    }, 60 * 60 * 1000);
                 }
                 break;
             }
