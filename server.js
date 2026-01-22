@@ -111,7 +111,7 @@ io.on('connection', (socket) => {
         if (!player) return;
         room.config = config;
     });
-    socket.on('stt', ({ roomID }) => {
+    socket.on('stt', ({ roomID, name }) => {
         const room = rooms[roomID];
         if (!room) return;
         const player = room.players[socket.id];
@@ -122,7 +122,9 @@ io.on('connection', (socket) => {
         }
         room.stt += 1;
         if (room.stt > room.config.targetCount) room.stt = 0;
-        room.stt1 = socket.id;
+        const stt1 = Object.values(room.players).filter(item => item.username === name);
+        if (stt1.length > 0) room.stt1 = stt1[0].id;
+        else room.stt1 = socket.id;
     });
 
     // // Cấu hình: 24 giờ tính bằng miliseconds
