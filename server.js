@@ -483,18 +483,20 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         // Tìm xem socket này ở phòng nào để xóa
         for (const roomID in rooms) {
-            if (rooms[roomID].players[socket.id]) {
+            const room = rooms[roomID];
+            if (room.players[socket.id]) {
                 // Set current player is not active.
-                rooms[roomID].players[socket.id].isActive = false;
-                io.to(roomID).emit('update_players', Object.values(rooms[roomID].players));
+                room.players[socket.id].isActive = false;
+                if (room.stt1 === socket.id) room.stt = 0;
+                io.to(roomID).emit('update_players', Object.values(room.players));
 
                 // Xóa phòng nếu không còn ai
-                if (Object.values(rooms[roomID].players).filter(item => item.isActive).length === 0) {
+                if (Object.values(room.players).filter(item => item.isActive).length === 0) {
                     // Chạy quét dọn phòng sau 1 tiếng.
                     setTimeout(() => {
-                        if (Object.values(rooms[roomID].players).filter(item => item.isActive).length === 0) {
-                            if (rooms[roomID].gameInterval) clearInterval(rooms[roomID].gameInterval);
-                            delete rooms[roomID];
+                        if (Object.values(room.players).filter(item => item.isActive).length === 0) {
+                            if (room.gameInterval) clearInterval(room.gameInterval);
+                            delete room;
                         }
                     }, 60 * 60 * 1000);
                 }
@@ -651,7 +653,7 @@ io.on('connection', (socket) => {
             // const size = Math.floor(Math.random() * Math.ceil(targetCount / 1));
             const size = targetCount;
             if (size > 0) {
-                if (room.config.boss !== player.username) {
+                if (room.stt1 !== socket.id) {
                     const picks = room.selections[room.stt1];
                     let indexs = [];
                     for (let index = 0; index < size; index++) {
@@ -676,8 +678,9 @@ io.on('connection', (socket) => {
                     Object.keys(room.selections).forEach(sid => {
                         const userPicks = room.selections[sid];
                         const userPickIds = rAnimals.filter(item => userPicks.includes(item.instanceId)).map(item => item.id);
-                        const vPickIds = userPickIds.filter(id => !pickIds.includes(id));
-                        vPickIds.forEach(pickId => pickIds.push(pickId));
+                        userPickIds.forEach(pickId => {
+                            if (!pickIds.includes(pickId)) pickIds.push(pickId);
+                        });
                     });
                     let indexs = [];
                     for (let index = 0; index < size; index++) {
